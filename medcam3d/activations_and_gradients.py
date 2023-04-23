@@ -4,10 +4,10 @@ class ActivationsAndGradients:
 
     def __init__(self, model, target_layers, reshape_transform):
         self.model = model
-        self.gradients: ls = []
-        self.activations: ls = []
+        self.gradients: list = []
+        self.activations: list = []
         self.reshape_transform = reshape_transform
-        self.handles: ls = []
+        self.handles: list = []
         for target_layer in target_layers:
             self.handles.append(
                 target_layer.register_forward_hook(self.save_activation))

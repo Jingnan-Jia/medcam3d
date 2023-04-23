@@ -2,11 +2,12 @@ import numpy as np
 import torch
 import ttach as tta
 from typing import Callable, List, Tuple
-from pytorch_grad_cam.activations_and_gradients import ActivationsAndGradients
-from pytorch_grad_cam.utils.svd_on_activations import get_2d_projection
-from pytorch_grad_cam.utils.image import scale_cam_image, cam_resize
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from medcam3d.activations_and_gradients import ActivationsAndGradients
+from medcam3d.utils.svd_on_activations import get_2d_projection
+from medcam3d.utils.image import scale_cam_image, cam_resize
+from medcam3d.utils.model_targets import ClassifierOutputTarget
 import cv2
+
 
 class BaseCAM:
     def __init__(self,
@@ -15,7 +16,19 @@ class BaseCAM:
                  use_cuda: bool = False,
                  reshape_transform: Callable = None,
                  compute_input_gradient: bool = False,
-                 uses_gradients: bool = True) -> None:
+                 uses_gradients: bool = True,
+                 ram=True) -> None:
+        """The base class for different kinds of CAM methods.
+
+        Args:
+            model (torch.nn.Module): a pytorch network
+            target_layers (List[torch.nn.Module]): one layer or a list of layers of network. For regression network, could be just one node of one layer.
+            use_cuda (bool, optional): _description_. Defaults to False.
+            reshape_transform (Callable, optional): _description_. Defaults to None.
+            compute_input_gradient (bool, optional): used by fullgrad_cam. Defaults to False.
+            uses_gradients (bool, optional): _description_. Defaults to True.
+        """
+        self.ram = ram
         self.model = model.eval()
         self.target_layers = target_layers
         self.cuda = use_cuda
@@ -27,9 +40,7 @@ class BaseCAM:
         self.activations_and_grads = ActivationsAndGradients(
             self.model, target_layers, reshape_transform)
 
-    """ Get a vector of weights for every channel in the target layer.
-        Methods that return weights channels,
-        will typically need to only implement this function. """
+
 
     def get_cam_weights(self,
                         input_tensor: torch.Tensor,
@@ -37,6 +48,23 @@ class BaseCAM:
                         targets: List[torch.nn.Module],
                         activations: torch.Tensor,
                         grads: torch.Tensor) -> np.ndarray:
+        """Get a vector of weights for every channel in the target layer.
+        Methods that return weights channels,
+        will typically need to only implement this function.
+
+        Args:
+            input_tensor (torch.Tensor): Input image, shape: n,c,z,y,x
+            target_layers (List[torch.nn.Module]): one layer or a list of layers.
+            targets (List[torch.nn.Module]): _description_
+            activations (torch.Tensor): _description_
+            grads (torch.Tensor): _description_
+
+        Raises:
+            Exception: _description_
+
+        Returns:
+            np.ndarray: _description_
+        """
         raise Exception("Not Implemented")
 
     def get_cam_image(self,
@@ -46,36 +74,66 @@ class BaseCAM:
                       activations: torch.Tensor,
                       grads: torch.Tensor,
                       eigen_smooth: bool = False) -> np.ndarray:
+        """_summary_
+
+        Args:
+            input_tensor (torch.Tensor): Input image, shape: n,c,z,y,x
+            target_layer (torch.nn.Module): _description_
+            targets (List[torch.nn.Module]): _description_
+            activations (torch.Tensor): shape: n,c,z,y,x
+            grads (torch.Tensor): shape: n,c,z,y,x
+            eigen_smooth (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            np.ndarray: _description_
+        """
 
         weights = self.get_cam_weights(input_tensor,
                                        target_layer,
                                        targets,
                                        activations,
-                                       grads)
-        weighted_activations = weights[:, :, None, None] * activations
-        if eigen_smooth:
+                                       grads)  # shape: n,c
+        if len(input_tensor.shape) == 5:  # 3d
+            weighted_activations = weights[:, :, None, None, None] * activations
+        else:
+            weighted_activations = weights[:, :, None, None] * activations
+            
+        if eigen_smooth:  # TODO: not implemented yet
             cam = get_2d_projection(weighted_activations)
         else:
-            cam = weighted_activations.sum(axis=1)
+            cam = weighted_activations.sum(axis=1)  # shape: n, z, y, x
         return cam
 
     def forward(self,
                 input_tensor: torch.Tensor,
                 targets: List[torch.nn.Module],
                 eigen_smooth: bool = False) -> np.ndarray:
+        """Main function for the calculation of the CAM.
+
+        Args:
+            input_tensor (torch.Tensor): Input image
+            targets (List[torch.nn.Module]): a (list of) layers
+            eigen_smooth (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            np.ndarray: _description_
+        """
 
         if self.cuda:
             input_tensor = input_tensor.cuda()
 
-        if self.compute_input_gradient:
+        if self.compute_input_gradient:  # used by fullgrad.py
             input_tensor = torch.autograd.Variable(input_tensor,
                                                    requires_grad=True)
 
-        outputs = self.activations_and_grads(input_tensor)
-        if targets is None:
-            target_categories = np.argmax(outputs.cpu().data.numpy(), axis=-1)
-            targets = [ClassifierOutputTarget(
-                category) for category in target_categories]
+        outputs = self.activations_and_grads(input_tensor)  # main operation
+        if targets is None: 
+            if self.ram:
+                raise Exception("No targets for the regression network")
+            else:  # automatically select the class
+                target_categories = np.argmax(outputs.cpu().data.numpy(), axis=-1)
+                targets = [ClassifierOutputTarget(
+                    category) for category in target_categories]
 
         if self.uses_gradients:
             self.model.zero_grad()
@@ -92,26 +150,37 @@ class BaseCAM:
         # This gives you more flexibility in case you just want to
         # use all conv layers for example, all Batchnorm layers,
         # or something else.
-        cam_per_layer = self.compute_cam_per_layer(input_tensor,
+        cam_per_layer: list = self.compute_cam_per_layer(input_tensor,
                                                    targets,
                                                    eigen_smooth)
         return self.aggregate_multi_layers(cam_per_layer)
 
-    def get_target_width_height(self,
+    def get_target_length_width_height(self,
                                 input_tensor: torch.Tensor) -> Tuple[int, int]:
-        width, height = input_tensor.size(-1), input_tensor.size(-2)
-        return width, height
+        length, width, height = input_tensor.size(-1), input_tensor.size(-2), input_tensor.size(-3)
+        return length, width, height
 
     def compute_cam_per_layer(
             self,
             input_tensor: torch.Tensor,
             targets: List[torch.nn.Module],
-            eigen_smooth: bool) -> np.ndarray:
+            eigen_smooth: bool) -> list:
+        """_summary_
+
+        Args:
+            input_tensor (torch.Tensor): _description_
+            targets (List[torch.nn.Module]): _description_
+            eigen_smooth (bool): _description_
+
+        Returns:
+            np.ndarray: _description_
+        """
+        
         activations_list = [a.cpu().data.numpy()
                             for a in self.activations_and_grads.activations]
         grads_list = [g.cpu().data.numpy()
                       for g in self.activations_and_grads.gradients]
-        target_size = self.get_target_width_height(input_tensor)
+        target_size = self.get_target_length_width_height(input_tensor) # shape: z, y, x
 
         cam_per_target_layer = []
         # Loop over the saliency image from every layer
@@ -129,16 +198,16 @@ class BaseCAM:
                                      targets,
                                      layer_activations,
                                      layer_grads,
-                                     eigen_smooth)
-            cam = np.maximum(cam, 0)
+                                     eigen_smooth)  # shape: n, z, y, x
+            cam = np.maximum(cam, 0)  # clamp the negative values
             # scaled = scale_cam_image(cam, target_size)
-            scaled = cam_resize(cam, target_size)
+            scaled = cam_resize(cam, target_size)  # n, z, y, x
             
-            cam_per_target_layer.append(scaled[:, None, :])
+            cam_per_target_layer.append(scaled[:, None, :])  # a list of np.array of shape: n, 1, z, y, x
 
         return cam_per_target_layer
 
-    def aggregate_multi_layers_scale(
+    def aggregate_multi_layers_scale(  # TODO: scale to range of (0,1) is not what we want for 3d CAM here
             self,
             cam_per_target_layer: np.ndarray) -> np.ndarray:
         cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)
@@ -148,10 +217,18 @@ class BaseCAM:
 
     def aggregate_multi_layers(
             self,
-            cam_per_target_layer: np.ndarray) -> np.ndarray:
-        cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)
-        cam_per_target_layer = np.maximum(cam_per_target_layer, 0)
-        result = np.mean(cam_per_target_layer, axis=1)
+            cam_per_target_layer: list) -> np.ndarray:
+        """_summary_
+
+        Args:
+            cam_per_target_layer (list): a list of CAMs
+
+        Returns:
+            np.ndarray: _description_
+        """
+        cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)  # n, *c*, z, y, x
+        cam_per_target_layer = np.maximum(cam_per_target_layer, 0)  # clamp any negative values
+        result = np.mean(cam_per_target_layer, axis=1) # n, 1, z, y, x
         return result
 
     def forward_augmentation_smoothing(self,
@@ -189,6 +266,17 @@ class BaseCAM:
                  targets: List[torch.nn.Module] = None,
                  aug_smooth: bool = False,
                  eigen_smooth: bool = False) -> np.ndarray:
+        """Call forward function. Could do some thing before that.
+
+        Args:
+            input_tensor (torch.Tensor): Input image
+            targets (List[torch.nn.Module], optional): A (list of) layers of network. Defaults to None.
+            aug_smooth (bool, optional): augmentation for testing dataset. Defaults to False.
+            eigen_smooth (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            np.ndarray: _description_
+        """
 
         # Smooth the CAM result with test time augmentation
         if aug_smooth is True:

@@ -1,3 +1,4 @@
+import torch
 class ActivationsAndGradients:
     """ Class for extracting activations and
     registering gradients from targetted intermediate layers """
@@ -39,7 +40,13 @@ class ActivationsAndGradients:
     def __call__(self, x):
         self.gradients = []
         self.activations = []
-        return self.model(x)
+        if 1:  # mixed precision
+            with torch.cuda.amp.autocast():
+                result = self.model(x)
+        else:
+            result = self.model(x)  # main operation
+
+        return result
 
     def release(self):
         for handle in self.handles:

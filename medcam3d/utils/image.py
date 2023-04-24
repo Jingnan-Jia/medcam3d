@@ -189,12 +189,15 @@ def cam_resize(cam: np.array, target_size=None) -> np.array:
     for img in cam:
         if target_size is not None: 
             if len(target_size) == 3: # 3d image
-                resize_fun = monai.transforms.Resize(target_size, mode='linear')  # receive image with shape c,z,y,x
+                # do not use 'linear' which is only for 3-d tensor (1d vectors)
+                resize_fun = monai.transforms.Resize(target_size, mode='trilinear')  # receive image with shape c,z,y,x
                 img = resize_fun(img[None,:,:,:])[0]  # z,y,x
+                img = img.numpy()
             else:
                 img = cv2.resize(img, target_size)  # for 2d image
         result.append(img)
     result = np.float32(result) # n, z,y,x
+    result = np.array(result)
     return result
 
 def scale_accross_batch_and_channels(tensor, target_size):

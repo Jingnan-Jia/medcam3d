@@ -3,7 +3,12 @@
 
 
 
-----------
+| Method              | What it does                                                                                                                |
+|---------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| GradCAM             | Weight the 3D activations by the average gradient                                                                           |
+
+
+
 # Chosing the Target Layer
 You need to choose the target layer to compute CAM for.
 Some common choices are:
@@ -14,7 +19,8 @@ Some common choices are:
 - ViT: model.blocks[-1].norm1
 - SwinT: model.layers[-1].blocks[-1].norm1
 
-If you pass a list with several layers, the CAM will be averaged accross them.
+If you pass **a list with several layers**, the CAM will be **averaged** accross them.
 This can be useful if you're not sure what layer will perform best.
 
 ----------
+

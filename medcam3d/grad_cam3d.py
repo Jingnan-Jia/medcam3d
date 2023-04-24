@@ -1,5 +1,5 @@
 import numpy as np
-from medcam3d.base_cam import BaseCAM
+from medcam3d.base_medcam3d import BaseCAM
 
 
 class GradCAM(BaseCAM):
@@ -22,5 +22,7 @@ class GradCAM(BaseCAM):
         # shape of grads: n, c, z, y, x
         if len(grads.shape) == 5:  # 3d
             return np.mean(grads, axis=(2, 3, 4))  # shape: n, c
-        else:  # 2d
+        elif len(grads.shape) == 4:  # 2d
             return np.mean(grads, axis=(2, 3))  # shape: n, c
+        else:
+            return grads

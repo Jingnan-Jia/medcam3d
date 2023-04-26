@@ -19,10 +19,11 @@ class GradCAM(BaseCAM):
                         target_category,
                         activations,
                         grads):
-        # shape of grads: n, c, z, y, x
-        if len(grads.shape) == 5:  # 3d
+        
+        if len(grads.shape) == 5:  # 3d，shape of grads: n, c, z, y, x
             return np.mean(grads, axis=(2, 3, 4))  # shape: n, c
-        elif len(grads.shape) == 4:  # 2d
+        elif len(grads.shape) == 4:  # 2d，shape of grads: n, c, y, x
             return np.mean(grads, axis=(2, 3))  # shape: n, c
-        else:
-            return grads
+        else:  # shape: (n,)
+            return grads  # shape: (n,)
+        

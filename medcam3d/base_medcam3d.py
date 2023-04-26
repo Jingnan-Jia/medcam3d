@@ -22,11 +22,11 @@ class BaseCAM:
 
         Args:
             model (torch.nn.Module): a pytorch network
-            target_layers (List[torch.nn.Module]): one layer or a list of layers of network. For regression network, could be just one node of one layer.
-            use_cuda (bool, optional): _description_. Defaults to False.
+            target_layers (List[torch.nn.Module]): one layer or a list of layers of network.
+            use_cuda (bool, optional): use GPU or not. Defaults to False.
             reshape_transform (Callable, optional): _description_. Defaults to None.
             compute_input_gradient (bool, optional): used by fullgrad_cam. Defaults to False.
-            uses_gradients (bool, optional): _description_. Defaults to True.
+            uses_gradients (bool, optional): If need gradients or not. Defaults to True.
         """
         self.ram = ram
         self.model = model.eval()
@@ -78,8 +78,8 @@ class BaseCAM:
 
         Args:
             input_tensor (torch.Tensor): Input image, shape: n,c,z,y,x
-            target_layer (torch.nn.Module): _description_
-            targets (List[torch.nn.Module]): _description_
+            target_layer (torch.nn.Module):  one layer or a list of layers of network.
+            targets (List[torch.nn.Module]): a list of Modules or classes
             activations (torch.Tensor): shape: n,c,z,y,x
             grads (torch.Tensor): shape: n,c,z,y,x
             eigen_smooth (bool, optional): _description_. Defaults to False.
@@ -93,7 +93,7 @@ class BaseCAM:
                                        targets,
                                        activations,
                                        grads)  # shape: n,c
-        if len(input_tensor.shape) == 5:  # 3d
+        if len(input_tensor.shape) == 5:  # 3d image, shape: n,c,z,y,x
             weighted_activations = weights[:, :, None, None, None] * activations
         else:
             weighted_activations = weights[:, :, None, None] * activations
@@ -111,8 +111,8 @@ class BaseCAM:
         """Main function for the calculation of the CAM.
 
         Args:
-            input_tensor (torch.Tensor): Input image
-            targets (List[torch.nn.Module]): a (list of) layers
+            input_tensor (torch.Tensor): Input image, shape: (n, c, z, y, x)
+            targets (List[torch.nn.Module]): target classes
             eigen_smooth (bool, optional): _description_. Defaults to False.
 
         Returns:
@@ -127,7 +127,7 @@ class BaseCAM:
                                                    requires_grad=True)
 
         outputs = self.activations_and_grads(input_tensor)  # main operation
-        if targets is None: 
+        if targets is None:  
             if self.ram:
                 raise Exception("No targets for the regression network")
             else:  # automatically select the class
@@ -137,8 +137,7 @@ class BaseCAM:
 
         if self.uses_gradients:
             self.model.zero_grad()
-            loss = sum([target(output)
-                       for target, output in zip(targets, outputs)])
+            loss = sum([target(output) for target, output in zip(targets, outputs)]) 
             loss.backward(retain_graph=True)
 
         # In most of the saliency attribution papers, the saliency is
@@ -168,18 +167,16 @@ class BaseCAM:
         """_summary_
 
         Args:
-            input_tensor (torch.Tensor): _description_
-            targets (List[torch.nn.Module]): _description_
+            input_tensor (torch.Tensor): Input image, shape: (n, c, z, y, x)
+            targets (List[torch.nn.Module]): target classes
             eigen_smooth (bool): _description_
 
         Returns:
             np.ndarray: _description_
         """
         
-        activations_list = [a.cpu().data.numpy()
-                            for a in self.activations_and_grads.activations]
-        grads_list = [g.cpu().data.numpy()
-                      for g in self.activations_and_grads.gradients]
+        activations_list = [a.cpu().data.numpy() for a in self.activations_and_grads.activations]
+        grads_list = [g.cpu().data.numpy() for g in self.activations_and_grads.gradients]
         target_size = self.get_target_length_width_height(input_tensor) # shape: z, y, x
 
         cam_per_target_layer = []
@@ -205,7 +202,7 @@ class BaseCAM:
             
             cam_per_target_layer.append(scaled[:, None, :])  # a list of np.array of shape: n, 1, z, y, x
 
-        return cam_per_target_layer
+        return cam_per_target_layer  # a list of np.array of shape: n, 1, z, y, x
 
     def aggregate_multi_layers_scale(  # TODO: scale to range of (0,1) is not what we want for 3d CAM here
             self,
@@ -221,15 +218,15 @@ class BaseCAM:
         """_summary_
 
         Args:
-            cam_per_target_layer (list): a list of CAMs
+            cam_per_target_layer (list): a list of CAMs arrays of shape: n, 1, z, y, x
 
         Returns:
             np.ndarray: _description_
         """
-        cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)  # n, *c*, z, y, x
+        cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)  # shape: (n, *c*, z, y, x)
         cam_per_target_layer = np.maximum(cam_per_target_layer, 0)  # clamp any negative values
-        result = np.mean(cam_per_target_layer, axis=1) # n, 1, z, y, x
-        return result
+        result = np.mean(cam_per_target_layer, axis=1) # shape: (n, 1, z, y, x)
+        return result  # shape: (n, 1, z, y, x)
 
     def forward_augmentation_smoothing(self,
                                        input_tensor: torch.Tensor,
@@ -269,8 +266,8 @@ class BaseCAM:
         """Call forward function. Could do some thing before that.
 
         Args:
-            input_tensor (torch.Tensor): Input image
-            targets (List[torch.nn.Module], optional): A (list of) layers of network. Defaults to None.
+            input_tensor (torch.Tensor): Input image, shape: (n, c, z, y, x)
+            targets (List[torch.nn.Module], optional): A (list of) layers of network or classes. Defaults to None.
             aug_smooth (bool, optional): augmentation for testing dataset. Defaults to False.
             eigen_smooth (bool, optional): _description_. Defaults to False.
 

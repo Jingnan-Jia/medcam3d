@@ -21,6 +21,10 @@ Some common choices are:
 
 If you pass **a list with several layers**, the CAM will be **averaged** accross them.
 This can be useful if you're not sure what layer will perform best.
+However, it may be not wise to select multiple layers at once because the CAMs's values of shallow layers may be way smaller than the deeper layers (e.g. 1/10). So the shallower layers' CAM would be ignored.
 
 ----------
+
+If this repository helps you in anyway, show your love ❤️ by putting a ⭐ on this project. 
+
 

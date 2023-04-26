@@ -56,12 +56,14 @@ cam = GradCAM(model=model, target_layers=target_layers, use_cuda=args.use_cuda)
 targets = [ClassifierOutputTarget(281)]  # 281 could be replace by 0 or 1 for two-class classification.
 
 # You can also pass aug_smooth=True and eigen_smooth=True, to apply smoothing.
-grayscale_cam = cam(input_tensor=input_tensor, targets=targets)  # output shape: (n_samples, length, width, height)
+cam_img = cam(input_tensor=input_tensor, targets=targets)  # output shape: (n_samples, length, width, height)
 
 # In this example grayscale_cam has only one image in the batch:
-grayscale_cam = grayscale_cam[0, :]
-visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
+cam_img = cam_img[0]  # output numpy array shape: (length, width, height)
+
+# Then you can save the array as .mha file and visualize it in MeVisLab like the following figure.
 ```
+<img src="./examples/cam_example.png">
 
 ----------
 

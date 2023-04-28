@@ -8,7 +8,7 @@ with open("requirements.txt", "r") as f:
 
 setuptools.setup(
     name='medcam3d',
-    version='0.0.3',
+    version='0.0.4',
     author='Jingnan Jia',
     author_email='jiajingnan2222@gmail.com',
     description='CAM for 3D medical image networks',

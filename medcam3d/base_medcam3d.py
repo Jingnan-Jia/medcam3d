@@ -156,7 +156,7 @@ class BaseCAM:
 
     def get_target_length_width_height(self,
                                 input_tensor: torch.Tensor) -> Tuple[int, int]:
-        length, width, height = input_tensor.size(-1), input_tensor.size(-2), input_tensor.size(-3)
+        length, width, height = input_tensor.size(-3), input_tensor.size(-2), input_tensor.size(-1)
         return length, width, height
 
     def compute_cam_per_layer(
